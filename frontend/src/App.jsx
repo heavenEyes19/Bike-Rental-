@@ -29,6 +29,7 @@ function App() {
               <Route path="/vehicles" element={<VehicleListing />} />
               <Route path="/vehicles/:id" element={<VehicleDetails />} />
               <Route path="/book/:id" element={<BookingFlow />} />
+              <Route path="/track/:bookingId" element={<BookingTracking />} />
               <Route path="/tracking/:bookingId" element={<BookingTracking />} />
             </Routes>
           </main>

@@ -127,6 +127,27 @@ router.get('/my-bookings', protect, async (req, res) => {
   }
 });
 
+// @route   GET /api/bookings/vendor/requests
+// @desc    Get all bookings for vehicles owned by the logged in vendor
+// @access  Private/Lender
+// IMPORTANT: Must be defined BEFORE /:id to avoid Express matching "vendor" as a booking ID
+router.get('/vendor/requests', protect, lender, async (req, res) => {
+  try {
+    const vehicles = await Vehicle.find({ vendorId: req.user._id });
+    const vehicleIds = vehicles.map(v => v._id);
+
+    const bookings = await Booking.find({ vehicle: { $in: vehicleIds } })
+      .populate('vehicle', 'name imageUrl type location pricePerHour')
+      .populate('user', 'name email phone')
+      .sort({ createdAt: -1 });
+
+    res.json(bookings);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error fetching vendor bookings' });
+  }
+});
+
 // @route   GET /api/bookings/:id
 // @desc    Get booking details by ID
 // @access  Private
@@ -159,27 +180,7 @@ router.get('/:id', protect, async (req, res) => {
   }
 });
 
-// @route   GET /api/bookings/vendor/requests
-// @desc    Get all bookings for vehicles owned by the logged in vendor
-// @access  Private/Lender
-router.get('/vendor/requests', protect, lender, async (req, res) => {
-  try {
-    // 1. Find all vehicles owned by this vendor
-    const vehicles = await Vehicle.find({ vendorId: req.user._id });
-    const vehicleIds = vehicles.map(v => v._id);
 
-    // 2. Find all bookings that reference any of these vehicles
-    const bookings = await Booking.find({ vehicle: { $in: vehicleIds } })
-      .populate('vehicle', 'name imageUrl type location pricePerHour')
-      .populate('user', 'name email phone')
-      .sort({ createdAt: -1 });
-
-    res.json(bookings);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server Error fetching vendor bookings' });
-  }
-});
 
 // @route   PUT /api/bookings/:id/status
 // @desc    Update booking status (accept/reject/complete)
@@ -219,27 +220,63 @@ router.put('/:id/status', protect, lender, async (req, res) => {
 });
 
 // @route   PUT /api/bookings/:id/live-location
-// @desc    Update booking's live last known location
+// @desc    Update booking's live GPS location and append to routeHistory
 // @access  Private
 router.put('/:id/live-location', protect, async (req, res) => {
   try {
-    const { lat, lng } = req.body;
+    const { lat, lng, speed = 0 } = req.body;
     const booking = await Booking.findById(req.params.id);
 
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
-    
-    // Ensure the logged in user is the one who booked it
+
     if (booking.user.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized' });
     }
 
+    // Update last known location
     booking.lastKnownLocation = { lat, lng };
+
+    // Append to route history (cap at 1000 points to avoid unbounded growth)
+    if (booking.routeHistory.length < 1000) {
+      booking.routeHistory.push({ lat, lng, speed, timestamp: new Date() });
+    }
+
     await booking.save();
+
+    // Also broadcast via Socket.IO to anyone watching this booking room
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`booking-${booking._id}`).emit('location-update', { lat, lng, speed });
+    }
 
     res.json({ message: 'Location updated' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error updating live location' });
+  }
+});
+
+// @route   GET /api/bookings/:id/route
+// @desc    Get full route history for a booking (for ride replay)
+// @access  Private
+router.get('/:id/route', protect, async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .select('routeHistory lastKnownLocation rideDistanceKm status user vehicle')
+      .populate('vehicle', 'name locationCoordinates');
+
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+    // Only the user or the vehicle's vendor can view
+    const isUser = booking.user.toString() === req.user._id.toString();
+    if (!isUser && req.user.role !== 'admin' && req.user.role !== 'lender') {
+      return res.status(401).json({ message: 'Not authorized' });
+    }
+
+    res.json(booking);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error fetching route' });
   }
 });
 

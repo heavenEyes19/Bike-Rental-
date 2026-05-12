@@ -34,23 +34,20 @@ const upload = multer({
 });
 
 // @route   GET /api/vehicles
-// @desc    Get all vehicles with optional filters
+// @desc    Get all available vehicles with optional filters
 // @access  Public
 router.get('/', async (req, res) => {
   try {
     const { type, search, maxPrice } = req.query;
-    
-    // Build query object
-    let query = {};
 
-    // Filter by type (Electric Scooter, Motorbike)
+    // Always only show available vehicles on the public listing
+    let query = { isAvailable: true };
+
     if (type) {
-      // If multiple types are passed as comma-separated
       const typesArray = type.split(',');
       query.type = { $in: typesArray };
     }
 
-    // Search by name or location
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -58,16 +55,29 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    // Filter by max price per hour
     if (maxPrice) {
       query.pricePerHour = { $lte: Number(maxPrice) };
     }
 
-    const vehicles = await Vehicle.find(query);
+    const vehicles = await Vehicle.find(query).sort({ createdAt: -1 });
     res.json(vehicles);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server Error fetching vehicles' });
+  }
+});
+
+// @route   GET /api/vehicles/vendor/my-vehicles
+// @desc    Get all vehicles owned by logged in vendor
+// @access  Private/Lender
+// IMPORTANT: Must be defined BEFORE /:id to avoid Express matching "vendor" as an id
+router.get('/vendor/my-vehicles', protect, lender, async (req, res) => {
+  try {
+    const vehicles = await Vehicle.find({ vendorId: req.user._id }).sort({ createdAt: -1 });
+    res.json(vehicles);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error fetching your vehicles' });
   }
 });
 
@@ -77,15 +87,14 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const vehicle = await Vehicle.findById(req.params.id);
-    
+
     if (!vehicle) {
       return res.status(404).json({ message: 'Vehicle not found' });
     }
-    
+
     res.json(vehicle);
   } catch (error) {
     console.error(error);
-    // If id is not a valid ObjectId, mongoose throws an error. Catch it and return 404.
     if (error.kind === 'ObjectId') {
       return res.status(404).json({ message: 'Vehicle not found' });
     }
@@ -93,17 +102,15 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// @route   GET /api/vehicles/vendor/my-vehicles
-// @desc    Get all vehicles owned by logged in vendor
+// @route   POST /api/vehicles/upload
+// @desc    Upload vehicle image
 // @access  Private/Lender
-router.get('/vendor/my-vehicles', protect, lender, async (req, res) => {
-  try {
-    const vehicles = await Vehicle.find({ vendorId: req.user._id });
-    res.json(vehicles);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server Error fetching your vehicles' });
+// IMPORTANT: Must be before POST /:id patterns
+router.post('/upload', protect, lender, upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Please upload an image' });
   }
+  res.json({ imageUrl: `/uploads/vehicles/${req.file.filename}` });
 });
 
 // @route   POST /api/vehicles
@@ -136,7 +143,7 @@ router.post('/', protect, lender, async (req, res) => {
 });
 
 // @route   PUT /api/vehicles/:id
-// @desc    Update a vehicle (e.g. toggle availability, update price)
+// @desc    Update a vehicle
 // @access  Private/Lender
 router.put('/:id', protect, lender, async (req, res) => {
   try {
@@ -146,7 +153,6 @@ router.put('/:id', protect, lender, async (req, res) => {
       return res.status(404).json({ message: 'Vehicle not found' });
     }
 
-    // Ensure the vendor owns this vehicle
     if (vehicle.vendorId.toString() !== req.user._id.toString()) {
       return res.status(401).json({ message: 'Not authorized to edit this vehicle' });
     }
@@ -170,16 +176,6 @@ router.put('/:id', protect, lender, async (req, res) => {
     console.error(error);
     res.status(500).json({ message: 'Server Error updating vehicle' });
   }
-});
-
-// @route   POST /api/vehicles/upload
-// @desc    Upload vehicle image
-// @access  Private/Lender
-router.post('/upload', protect, lender, upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: 'Please upload an image' });
-  }
-  res.json({ imageUrl: `/uploads/vehicles/${req.file.filename}` });
 });
 
 module.exports = router;

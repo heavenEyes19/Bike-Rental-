@@ -13,33 +13,36 @@ const VehicleListing = () => {
   const [filters, setFilters] = useState({
     electric: false,
     motorbike: false,
-    maxPrice: 200
+    maxPrice: 500  // Default to slider max so all vehicles show initially
   });
+
+  const PRICE_MAX = 500;
 
   const fetchVehicles = async () => {
     setLoading(true);
+    setError('');
     try {
-      // Build query string
-      let queryUrl = 'http://localhost:5000/api/vehicles?';
-      
+      const params = new URLSearchParams();
+
       const types = [];
       if (filters.electric) types.push('Electric Scooter');
       if (filters.motorbike) types.push('Motorbike');
-      if (types.length > 0) {
-        queryUrl += `type=${types.join(',')}&`;
+      if (types.length > 0) params.append('type', types.join(','));
+
+      if (searchQuery) params.append('search', searchQuery);
+
+      // Only apply maxPrice filter when the slider is not at the maximum
+      if (filters.maxPrice < PRICE_MAX) {
+        params.append('maxPrice', filters.maxPrice);
       }
 
-      if (searchQuery) {
-        queryUrl += `search=${searchQuery}&`;
-      }
-
-      queryUrl += `maxPrice=${filters.maxPrice}`;
-
-      const res = await axios.get(queryUrl);
+      const res = await axios.get(`http://localhost:5000/api/vehicles?${params.toString()}`, {
+        timeout: 10000  // 10 second timeout to prevent infinite loading
+      });
       setVehicles(res.data);
     } catch (err) {
       console.error(err);
-      setError('Failed to load vehicles');
+      setError(err.code === 'ECONNABORTED' ? 'Request timed out. Is the server running?' : 'Failed to load vehicles. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -132,7 +135,7 @@ const VehicleListing = () => {
                   />
                   <div className="flex justify-between text-xs font-bold text-slate-500 mt-2">
                     <span>₹10/hr</span>
-                    <span>₹500/hr</span>
+                    <span>{filters.maxPrice < 500 ? `₹${filters.maxPrice}/hr max` : 'Any price'}</span>
                   </div>
                 </div>
               </div>

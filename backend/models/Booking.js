@@ -34,9 +34,22 @@ const bookingSchema = new mongoose.Schema({
   razorpayPaymentId: {
     type: String,
   },
+  // Last known GPS position of rider (updated every few seconds during ride)
   lastKnownLocation: {
     lat: Number,
     lng: Number
+  },
+  // Full route history stored during the ride for replay
+  routeHistory: [{
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+    speed: { type: Number, default: 0 }, // km/h
+    timestamp: { type: Date, default: Date.now }
+  }],
+  // Total distance ridden in km (calculated at ride end)
+  rideDistanceKm: {
+    type: Number,
+    default: 0
   }
 }, { timestamps: true });
 

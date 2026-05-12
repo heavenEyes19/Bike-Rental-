@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight } from 'lucide-react';
+import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight, Navigation } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const UserDashboard = () => {
@@ -282,6 +283,7 @@ const BookingsTab = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchBookings = async () => {
@@ -319,9 +321,9 @@ const BookingsTab = () => {
             {bookings.map(booking => (
               <div key={booking._id} className="flex flex-col md:flex-row md:items-center justify-between p-6 border border-zinc-100 dark:border-zinc-800 rounded-2xl gap-4">
                 <div className="flex items-center space-x-4">
-                  <div 
+                  <div
                     className="w-16 h-16 bg-zinc-50 dark:bg-zinc-800 rounded-xl flex items-center justify-center border border-zinc-200 dark:border-zinc-700 bg-cover bg-center shrink-0"
-                    style={{ backgroundImage: booking.vehicle?.imageUrl ? `url(${booking.vehicle.imageUrl})` : 'none' }}
+                    style={{ backgroundImage: booking.vehicle?.imageUrl ? `url(http://localhost:5000${booking.vehicle.imageUrl})` : 'none' }}
                   >
                     {!booking.vehicle?.imageUrl && <span className="text-3xl">🛵</span>}
                   </div>
@@ -332,15 +334,33 @@ const BookingsTab = () => {
                     </p>
                   </div>
                 </div>
-                <div className="text-left md:text-right">
-                  <p className="font-black text-slate-900 dark:text-white text-xl">₹{booking.totalAmount}</p>
-                  <span className={`inline-block px-3 py-1 text-xs font-bold rounded-lg mt-1 uppercase tracking-wider ${
-                    booking.status === 'confirmed' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500' :
-                    booking.status === 'pending' ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-500' :
-                    'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                  }`}>
-                    {booking.status}
-                  </span>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  <div className="text-left sm:text-right">
+                    <p className="font-black text-slate-900 dark:text-white text-xl">₹{booking.totalAmount}</p>
+                    <span className={`inline-block px-3 py-1 text-xs font-bold rounded-lg mt-1 uppercase tracking-wider ${
+                      booking.status === 'confirmed' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500' :
+                      booking.status === 'pending' ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-500' :
+                      'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                    }`}>
+                      {booking.status}
+                    </span>
+                  </div>
+                  {booking.status === 'confirmed' && (
+                    <button
+                      onClick={() => navigate(`/track/${booking._id}`)}
+                      className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm whitespace-nowrap"
+                    >
+                      <Navigation className="w-4 h-4" /> Track Ride
+                    </button>
+                  )}
+                  {booking.status === 'completed' && (
+                    <button
+                      onClick={() => navigate(`/track/${booking._id}`)}
+                      className="flex items-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-bold rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors text-sm whitespace-nowrap"
+                    >
+                      🔁 Replay Route
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
