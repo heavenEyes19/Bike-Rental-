@@ -1,34 +1,85 @@
-import { useState, useEffect } from 'react';
-import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight, Navigation } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight, Navigation, Bell, CheckCircle, XCircle } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 
 const UserDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [toast, setToast] = useState(null); // { type: 'success'|'error', message }
+  const socketRef = useRef(null);
+  const [searchParams] = useSearchParams();
 
   const userString = localStorage.getItem('user');
   const user = userString ? JSON.parse(userString) : { name: 'User', role: 'user' };
   const initials = user.name ? user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
 
+  // Switch to bookings tab from URL params (after BookingFlow redirect)
+  useEffect(() => {
+    if (searchParams.get('tab') === 'bookings') {
+      setActiveTab('bookings');
+      if (searchParams.get('confirmed')) {
+        showToast('success', '🎉 Booking confirmed! Your ride is ready.');
+      } else if (searchParams.get('pending')) {
+        showToast('info', '⏳ Payment received! Awaiting lender confirmation.');
+      }
+    }
+  }, []);
+
+  // Socket.IO — join user room for notifications
+  useEffect(() => {
+    if (!user?._id) return;
+    socketRef.current = io('http://localhost:5000');
+    socketRef.current.emit('join-user-room', user._id);
+
+    socketRef.current.on('booking-confirmed', ({ vehicleName, message }) => {
+      showToast('success', `✅ ${message}`);
+      // Refresh bookings tab
+      setActiveTab(prev => prev); // trigger re-render trick
+    });
+
+    socketRef.current.on('booking-rejected', ({ vehicleName, message }) => {
+      showToast('error', `❌ ${message}`);
+    });
+
+    socketRef.current.on('new-booking-request', ({ message }) => {
+      showToast('info', `📨 ${message}`);
+    });
+
+    return () => socketRef.current?.disconnect();
+  }, [user?._id]);
+
+  const showToast = (type, message) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 6000);
+  };
+
   const renderContent = () => {
     switch (activeTab) {
-      case 'overview':
-        return <OverviewTab />;
-      case 'profile':
-        return <ProfileTab />;
-      case 'bookings':
-        return <BookingsTab />;
-      case 'wallet':
-        return <WalletTab />;
-      default:
-        return <OverviewTab />;
+      case 'overview': return <OverviewTab />;
+      case 'profile': return <ProfileTab />;
+      case 'bookings': return <BookingsTab />;
+      case 'wallet': return <WalletTab />;
+      default: return <OverviewTab />;
     }
   };
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pt-28 pb-20 selection:bg-orange-100 selection:text-orange-900 transition-colors duration-300">
       <div className="container mx-auto px-6 max-w-7xl">
-        
+
+        {/* Toast notification */}
+        {toast && (
+          <div className={`fixed top-24 right-6 z-[500] max-w-sm w-full p-4 rounded-2xl shadow-2xl flex items-start gap-3 animate-fade-in-up border ${
+            toast.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-200 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300' :
+            toast.type === 'error'   ? 'bg-red-50 dark:bg-red-900/40 border-red-200 dark:border-red-700 text-red-800 dark:text-red-300' :
+            'bg-blue-50 dark:bg-blue-900/40 border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-300'
+          }`}>
+            <Bell className="w-5 h-5 shrink-0 mt-0.5" />
+            <p className="font-bold text-sm flex-1">{toast.message}</p>
+            <button onClick={() => setToast(null)} className="shrink-0 opacity-60 hover:opacity-100"><XCircle className="w-4 h-4" /></button>
+          </div>
+        )}
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Sidebar */}
           <div className="w-full lg:w-1/4">
@@ -337,13 +388,21 @@ const BookingsTab = () => {
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                   <div className="text-left sm:text-right">
                     <p className="font-black text-slate-900 dark:text-white text-xl">₹{booking.totalAmount}</p>
-                    <span className={`inline-block px-3 py-1 text-xs font-bold rounded-lg mt-1 uppercase tracking-wider ${
-                      booking.status === 'confirmed' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500' :
-                      booking.status === 'pending' ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-500' :
-                      'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                    }`}>
-                      {booking.status}
-                    </span>
+                    {booking.status === 'pending' ? (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400">Awaiting lender confirmation</span>
+                      </div>
+                    ) : (
+                      <span className={`inline-block px-3 py-1 text-xs font-bold rounded-lg mt-1 uppercase tracking-wider ${
+                        booking.status === 'confirmed'  ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
+                        booking.status === 'cancelled'  ? 'bg-red-50 dark:bg-red-500/10 text-red-500' :
+                        booking.status === 'completed'  ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' :
+                        'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                      }`}>
+                        {booking.status}
+                      </span>
+                    )}
                   </div>
                   {booking.status === 'confirmed' && (
                     <button

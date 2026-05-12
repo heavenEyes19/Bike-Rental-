@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Bike, DollarSign, Activity, Settings, Plus, MapPin, CheckCircle, XCircle, Navigation } from 'lucide-react';
+import { Bike, DollarSign, Activity, Settings, Plus, MapPin, CheckCircle, XCircle, Navigation, Trash2, Bell, Zap, Hand } from 'lucide-react';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -32,6 +33,30 @@ const LenderDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [newRequestCount, setNewRequestCount] = useState(0);
+  const [toast, setToast] = useState(null);
+  const socketRef = useRef(null);
+
+  const userString = localStorage.getItem('user');
+  const user = userString ? JSON.parse(userString) : {};
+
+  const showToast = (type, message) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 6000);
+  };
+
+  // Socket.IO — join lender's personal room for booking notifications
+  useEffect(() => {
+    if (!user?._id) return;
+    socketRef.current = io('http://localhost:5000');
+    socketRef.current.emit('join-user-room', user._id);
+    socketRef.current.on('new-booking-request', ({ vehicleName, userName }) => {
+      setNewRequestCount(prev => prev + 1);
+      showToast('info', `📨 ${userName} requested ${vehicleName}`);
+      fetchData();
+    });
+    return () => socketRef.current?.disconnect();
+  }, [user?._id]);
 
   // Stats
   const [totalEarnings, setTotalEarnings] = useState(0);
@@ -96,13 +121,37 @@ const LenderDashboard = () => {
             <nav className="space-y-2">
               <SidebarItem icon={<Activity />} label="Overview" active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
               <SidebarItem icon={<Bike />} label="My Vehicles" active={activeTab === 'vehicles'} onClick={() => setActiveTab('vehicles')} />
-              <SidebarItem icon={<Settings />} label="Booking Requests" active={activeTab === 'requests'} onClick={() => setActiveTab('requests')} />
+              <button
+                onClick={() => { setActiveTab('requests'); setNewRequestCount(0); }}
+                className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all duration-200 font-bold ${
+                  activeTab === 'requests'
+                  ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-500'
+                  : 'text-slate-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <div className="flex items-center space-x-3"><Settings size={18} /><span>Booking Requests</span></div>
+                {newRequestCount > 0 && (
+                  <span className="w-5 h-5 bg-red-500 text-white text-xs font-black rounded-full flex items-center justify-center animate-pulse">{newRequestCount}</span>
+                )}
+              </button>
             </nav>
           </div>
         </div>
 
         {/* Main Content */}
         <div className="flex-1">
+          {/* Toast notification */}
+          {toast && (
+            <div className={`fixed top-24 right-6 z-[500] max-w-sm w-full p-4 rounded-2xl shadow-2xl flex items-start gap-3 border ${
+              toast.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-200 text-emerald-800 dark:text-emerald-300' :
+              toast.type === 'error'   ? 'bg-red-50 dark:bg-red-900/40 border-red-200 text-red-800 dark:text-red-300' :
+              'bg-blue-50 dark:bg-blue-900/40 border-blue-200 text-blue-800 dark:text-blue-300'
+            }`}>
+              <Bell className="w-5 h-5 shrink-0 mt-0.5" />
+              <p className="font-bold text-sm flex-1">{toast.message}</p>
+              <button onClick={() => setToast(null)} className="opacity-60 hover:opacity-100"><XCircle className="w-4 h-4" /></button>
+            </div>
+          )}
           {error && <div className="mb-6 p-4 bg-red-50 text-red-500 font-bold rounded-2xl">{error}</div>}
           {loading ? (
              <div className="text-slate-500 font-bold">Loading your dashboard...</div>
@@ -156,17 +205,47 @@ const OverviewTab = ({ vehiclesCount, totalEarnings, activeRentals }) => (
 
 const VehiclesTab = ({ vehicles, refreshData }) => {
   const [showAddModal, setShowAddModal] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const toggleAvailability = async (vehicle) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/vehicles/${vehicle._id}`, 
+      await axios.put(`http://localhost:5000/api/vehicles/${vehicle._id}`,
         { isAvailable: !vehicle.isAvailable },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       refreshData();
     } catch (err) {
       alert('Failed to update availability');
+    }
+  };
+
+  const deleteVehicle = async (vehicle) => {
+    if (!window.confirm(`Remove "${vehicle.name}" from your listings? This cannot be undone.`)) return;
+    setDeletingId(vehicle._id);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`http://localhost:5000/api/vehicles/${vehicle._id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      refreshData();
+    } catch (err) {
+      alert('Failed to remove vehicle');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const toggleAutoConfirm = async (vehicle) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`http://localhost:5000/api/vehicles/${vehicle._id}`,
+        { autoConfirm: !vehicle.autoConfirm },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      refreshData();
+    } catch (err) {
+      alert('Failed to update confirmation mode');
     }
   };
 
@@ -191,36 +270,57 @@ const VehiclesTab = ({ vehicles, refreshData }) => {
           </div>
         ) : (
           vehicles.map(vehicle => (
-            <div key={vehicle._id} className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm flex flex-col transition-colors duration-300">
-              <div 
-                className="h-48 bg-zinc-100 dark:bg-zinc-800 bg-cover bg-center flex items-center justify-center"
-                style={{ backgroundImage: vehicle.imageUrl ? `url(${vehicle.imageUrl})` : 'none' }}
-              >
-                {!vehicle.imageUrl && <Bike size={48} className="text-zinc-300" />}
-              </div>
-              <div className="p-6 flex-1 flex flex-col">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-black text-xl text-slate-900 dark:text-white">{vehicle.name}</h3>
-                  <span className="font-black text-orange-500">₹{vehicle.pricePerHour}/hr</span>
+              <div key={vehicle._id} className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm flex flex-col transition-colors duration-300">
+                <div
+                  className="h-48 bg-zinc-100 dark:bg-zinc-800 bg-cover bg-center flex items-center justify-center"
+                  style={{ backgroundImage: vehicle.imageUrl ? `url(http://localhost:5000${vehicle.imageUrl})` : 'none' }}
+                >
+                  {!vehicle.imageUrl && <Bike size={48} className="text-zinc-300" />}
                 </div>
-                <p className="text-sm font-bold text-slate-500 dark:text-zinc-400 mb-6">{vehicle.type} • {vehicle.location}</p>
-                
-                <div className="mt-auto flex items-center justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                  <div className="flex items-center space-x-2">
-                    <div className={`w-3 h-3 rounded-full ${vehicle.isAvailable ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                    <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">
-                      {vehicle.isAvailable ? 'Available' : 'Offline'}
-                    </span>
+                <div className="p-6 flex-1 flex flex-col">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-black text-xl text-slate-900 dark:text-white">{vehicle.name}</h3>
+                    <span className="font-black text-orange-500">₹{vehicle.pricePerHour}/hr</span>
                   </div>
-                  <button 
-                    onClick={() => toggleAvailability(vehicle)}
-                    className="text-sm font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white"
-                  >
-                    Toggle Status
-                  </button>
+                  <p className="text-sm font-bold text-slate-500 dark:text-zinc-400 mb-6">{vehicle.type} • {vehicle.location}</p>
+
+                  <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${vehicle.isAvailable ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                        <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">
+                          {vehicle.isAvailable ? 'Available' : 'Offline'}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => toggleAvailability(vehicle)}
+                        className="text-sm font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+                      >
+                        Toggle Status
+                      </button>
+                    </div>
+                    {/* Auto-Confirm Toggle */}
+                    <button
+                      onClick={() => toggleAutoConfirm(vehicle)}
+                      className={`w-full flex items-center justify-center gap-2 py-2.5 font-bold rounded-xl text-sm transition-colors ${
+                        vehicle.autoConfirm
+                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      {vehicle.autoConfirm ? <><Zap className="w-4 h-4" /> Auto-Confirm ON</> : <><Hand className="w-4 h-4" /> Manual Approval</>}
+                    </button>
+                    <button
+                      onClick={() => deleteVehicle(vehicle)}
+                      disabled={deletingId === vehicle._id}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 dark:bg-red-500/10 text-red-500 hover:bg-red-100 dark:hover:bg-red-500/20 font-bold rounded-xl text-sm transition-colors disabled:opacity-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      {deletingId === vehicle._id ? 'Removing...' : 'Remove Listing'}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
           ))
         )}
       </div>
@@ -268,24 +368,43 @@ const RequestsTab = ({ requests, onUpdateStatus, refreshData }) => {
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <p className="font-black text-slate-900 dark:text-white text-xl">₹{req.totalAmount}</p>
+
+                  {/* PENDING — lender must Accept or Decline */}
+                  {req.status === 'pending' && (
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400">Awaiting your approval</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => onUpdateStatus(req._id, 'confirmed')} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white hover:bg-emerald-600 font-bold rounded-lg text-sm transition-colors">
+                          <CheckCircle className="w-4 h-4" /> Accept
+                        </button>
+                        <button onClick={() => onUpdateStatus(req._id, 'cancelled')} className="flex items-center gap-1.5 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 font-bold rounded-lg text-sm transition-colors">
+                          <XCircle className="w-4 h-4" /> Decline
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CONFIRMED — can complete or cancel */}
                   {req.status === 'confirmed' && (
                     <div className="flex space-x-2">
                       <button onClick={() => onUpdateStatus(req._id, 'completed')} className="px-4 py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 font-bold rounded-lg text-sm transition-colors">Mark Completed</button>
                       <button onClick={() => onUpdateStatus(req._id, 'cancelled')} className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 font-bold rounded-lg text-sm transition-colors">Cancel</button>
                     </div>
                   )}
+
+                  {/* COMPLETED — location update */}
                   {req.status === 'completed' && (
-                    <button
-                      onClick={() => setConfirmLocationReq(req)}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold rounded-lg text-sm hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
-                    >
+                    <button onClick={() => setConfirmLocationReq(req)} className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold rounded-lg text-sm hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors">
                       <Navigation className="w-4 h-4" /> Update Vehicle Location
                     </button>
                   )}
-                  {req.status !== 'confirmed' && req.status !== 'completed' && (
-                    <span className={`inline-block px-3 py-1 text-xs font-bold rounded-lg uppercase tracking-wider ${
-                      req.status === 'pending' ? 'bg-orange-50 dark:bg-orange-500/10 text-orange-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
-                    }`}>{req.status}</span>
+
+                  {/* CANCELLED badge */}
+                  {req.status === 'cancelled' && (
+                    <span className="inline-block px-3 py-1 text-xs font-bold rounded-lg uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500">Cancelled</span>
                   )}
                 </div>
               </div>

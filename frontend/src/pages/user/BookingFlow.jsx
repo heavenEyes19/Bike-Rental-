@@ -125,8 +125,13 @@ const BookingFlow = () => {
             });
 
             if (verifyRes.status === 200) {
-              alert('Booking Confirmed successfully!');
-              navigate('/dashboard/user'); // Assuming you want to navigate to dashboard after
+              if (verifyRes.data.autoConfirmed) {
+                // Instant confirmation — go to dashboard
+                navigate('/dashboard/user?tab=bookings&confirmed=1');
+              } else {
+                // Manual approval — show waiting screen
+                navigate(`/dashboard/user?tab=bookings&pending=${verifyRes.data.bookingId}`);
+              }
             }
           } catch (err) {
             console.error('Verification Error:', err);

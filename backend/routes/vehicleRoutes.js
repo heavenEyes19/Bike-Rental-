@@ -178,4 +178,27 @@ router.put('/:id', protect, lender, async (req, res) => {
   }
 });
 
+// @route   DELETE /api/vehicles/:id
+// @desc    Delete a vehicle listing
+// @access  Private/Lender
+router.delete('/:id', protect, lender, async (req, res) => {
+  try {
+    const vehicle = await Vehicle.findById(req.params.id);
+
+    if (!vehicle) {
+      return res.status(404).json({ message: 'Vehicle not found' });
+    }
+
+    if (vehicle.vendorId.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: 'Not authorized to delete this vehicle' });
+    }
+
+    await vehicle.deleteOne();
+    res.json({ message: 'Vehicle removed successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error deleting vehicle' });
+  }
+});
+
 module.exports = router;

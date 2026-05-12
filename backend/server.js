@@ -48,6 +48,12 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} joined room booking-${bookingId}`);
   });
 
+  // User/Lender joins their personal notification room
+  socket.on('join-user-room', (userId) => {
+    socket.join(`user-${userId}`);
+    console.log(`Socket ${socket.id} joined user room user-${userId}`);
+  });
+
   // Rider broadcasts their live location — server relays to everyone in the room
   socket.on('rider-location', ({ bookingId, lat, lng, speed }) => {
     socket.to(`booking-${bookingId}`).emit('location-update', { lat, lng, speed });

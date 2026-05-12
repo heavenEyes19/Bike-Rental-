@@ -57,7 +57,12 @@ const vehicleSchema = new mongoose.Schema({
   },
   vendorId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // Will link to Lender later
+    ref: 'User',
+  },
+  // Lender can toggle: true = auto-approve all bookings, false = manual approval required
+  autoConfirm: {
+    type: Boolean,
+    default: false
   }
 }, { timestamps: true });
 

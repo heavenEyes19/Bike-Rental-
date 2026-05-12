@@ -69,9 +69,9 @@ router.post('/create-order', protect, async (req, res) => {
 // @access  Private
 router.post('/verify-payment', protect, async (req, res) => {
   try {
-    const { 
-      razorpay_order_id, 
-      razorpay_payment_id, 
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
       razorpay_signature,
       vehicleId,
       durationHours,
@@ -86,28 +86,60 @@ router.post('/verify-payment', protect, async (req, res) => {
       .update(sign.toString())
       .digest("hex");
 
-    if (razorpay_signature === expectedSign) {
-      // Payment is verified
-      const booking = new Booking({
-        user: req.user._id,
-        vehicle: vehicleId,
-        startDate: startDate ? new Date(startDate) : new Date(),
-        durationHours,
-        totalAmount,
-        status: 'confirmed',
-        razorpayOrderId: razorpay_order_id,
-        razorpayPaymentId: razorpay_payment_id
-      });
-
-      await booking.save();
-      
-      // Optionally mark vehicle as unavailable here
-      // await Vehicle.findByIdAndUpdate(vehicleId, { isAvailable: false });
-
-      return res.status(200).json({ message: "Payment verified successfully", bookingId: booking._id });
-    } else {
+    if (razorpay_signature !== expectedSign) {
       return res.status(400).json({ message: "Invalid signature sent!" });
     }
+
+    // Fetch vehicle to check autoConfirm + get lender id
+    const vehicle = await Vehicle.findById(vehicleId).populate('vendorId', '_id name');
+    if (!vehicle) return res.status(404).json({ message: 'Vehicle not found' });
+
+    const autoConfirmed = vehicle.autoConfirm === true;
+    const bookingStatus = autoConfirmed ? 'confirmed' : 'pending';
+
+    const booking = new Booking({
+      user: req.user._id,
+      vehicle: vehicleId,
+      startDate: startDate ? new Date(startDate) : new Date(),
+      durationHours,
+      totalAmount,
+      status: bookingStatus,
+      razorpayOrderId: razorpay_order_id,
+      razorpayPaymentId: razorpay_payment_id
+    });
+
+    await booking.save();
+
+    const io = req.app.get('io');
+
+    if (autoConfirmed) {
+      // Mark vehicle unavailable immediately
+      await Vehicle.findByIdAndUpdate(vehicleId, { isAvailable: false });
+      // Notify user of instant confirmation
+      if (io) io.to(`user-${req.user._id}`).emit('booking-confirmed', {
+        bookingId: booking._id,
+        vehicleName: vehicle.name,
+        message: `Your booking for ${vehicle.name} is confirmed!`
+      });
+    } else {
+      // Notify lender of new pending request
+      if (io && vehicle.vendorId?._id) {
+        io.to(`user-${vehicle.vendorId._id}`).emit('new-booking-request', {
+          bookingId: booking._id,
+          vehicleName: vehicle.name,
+          userName: req.user.name,
+          message: `New booking request for ${vehicle.name}`
+        });
+      }
+    }
+
+    return res.status(200).json({
+      message: autoConfirmed ? "Booking confirmed!" : "Payment verified. Awaiting lender confirmation.",
+      bookingId: booking._id,
+      status: bookingStatus,
+      autoConfirmed
+    });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Payment verification failed' });
@@ -201,15 +233,29 @@ router.put('/:id/status', protect, lender, async (req, res) => {
 
     booking.status = status;
     const updatedBooking = await booking.save();
-    
-    // Automatic Vehicle Handoff: When completed, update vehicle location to last known rider location
-    if (status === 'completed' && booking.lastKnownLocation) {
-      await Vehicle.findByIdAndUpdate(booking.vehicle._id, { 
-        isAvailable: true,
-        locationCoordinates: booking.lastKnownLocation
+
+    const io = req.app.get('io');
+
+    // Notify the user in real time
+    if (status === 'confirmed') {
+      await Vehicle.findByIdAndUpdate(booking.vehicle._id, { isAvailable: false });
+      if (io) io.to(`user-${booking.user}`).emit('booking-confirmed', {
+        bookingId: booking._id,
+        vehicleName: booking.vehicle.name,
+        message: `Your booking for ${booking.vehicle.name} has been confirmed! You can now track your ride.`
       });
     } else if (status === 'cancelled') {
       await Vehicle.findByIdAndUpdate(booking.vehicle._id, { isAvailable: true });
+      if (io) io.to(`user-${booking.user}`).emit('booking-rejected', {
+        bookingId: booking._id,
+        vehicleName: booking.vehicle.name,
+        message: `Sorry, your booking for ${booking.vehicle.name} was declined by the lender.`
+      });
+    } else if (status === 'completed' && booking.lastKnownLocation) {
+      await Vehicle.findByIdAndUpdate(booking.vehicle._id, {
+        isAvailable: true,
+        locationCoordinates: booking.lastKnownLocation
+      });
     }
 
     res.json(updatedBooking);
