@@ -436,6 +436,7 @@ const AddVehicleModal = ({ onClose, onAdd }) => {
   const [pinCoords, setPinCoords] = useState(null); // [lat, lng] from map click
   const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]); // India default
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [aiPricingLoading, setAiPricingLoading] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -480,6 +481,33 @@ const AddVehicleModal = ({ onClose, onAdd }) => {
     }
   };
 
+  const handleSuggestPrice = async () => {
+    if (!formData.name || !formData.location || !formData.type) {
+      alert("Please fill in Name, Type, and Location first to get an accurate suggestion.");
+      return;
+    }
+    setAiPricingLoading(true);
+    try {
+      const res = await axios.post('http://localhost:5000/api/ai/suggest-price', {
+        type: formData.type,
+        name: formData.name,
+        location: formData.location,
+        range: formData.range,
+        description: formData.description
+      });
+      setFormData({
+        ...formData,
+        pricePerHour: res.data.pricePerHour,
+        pricePerDay: res.data.pricePerDay
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Failed to get AI pricing suggestion.");
+    } finally {
+      setAiPricingLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!pinCoords) { alert('Please pin the vehicle location on the map.'); return; }
@@ -519,7 +547,17 @@ const AddVehicleModal = ({ onClose, onAdd }) => {
       <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-black text-slate-900 dark:text-white">Add New Vehicle</h2>
-          <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><XCircle /></button>
+          <div className="flex items-center gap-3">
+            <button 
+              type="button"
+              onClick={handleSuggestPrice}
+              disabled={aiPricingLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-rose-500 text-white text-sm font-bold rounded-xl hover:from-orange-600 hover:to-rose-600 shadow-md transition-all disabled:opacity-50"
+            >
+              <Zap size={16} /> {aiPricingLoading ? 'Thinking...' : 'AI Suggest Price'}
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><XCircle /></button>
+          </div>
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-6">

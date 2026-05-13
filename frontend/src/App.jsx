@@ -11,6 +11,7 @@ import VehicleDetails from './pages/user/VehicleDetails';
 import BookingFlow from './pages/user/BookingFlow';
 import BookingTracking from './pages/user/BookingTracking';
 import { ThemeProvider } from './contexts/ThemeContext';
+import AIChatWidget from './components/AIChatWidget';
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
               <Route path="/tracking/:bookingId" element={<BookingTracking />} />
             </Routes>
           </main>
+          <AIChatWidget />
         </div>
       </Router>
     </ThemeProvider>

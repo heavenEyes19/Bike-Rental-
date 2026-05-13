@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight, Navigation, Bell, CheckCircle, XCircle } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight, Navigation, Bell, CheckCircle, XCircle, Battery, Star } from 'lucide-react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 
@@ -132,25 +132,138 @@ const UserDashboard = () => {
 
 // Sub-components for Tabs
 
-const OverviewTab = () => (
-  <div className="space-y-8 animate-fade-in-up">
-    <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-6">Dashboard Overview</h1>
-    
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <DashboardCard title="Active Rentals" icon={<MapPin className="text-orange-500" />} value="0" />
-      <DashboardCard title="Past Bookings" icon={<History className="text-orange-500" />} value="12" />
-      <DashboardCard title="Wallet Balance" icon={<CreditCard className="text-orange-500" />} value="₹450" />
-    </div>
+const OverviewTab = () => {
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  // AI Recommendation State
+  const [aiQuery, setAiQuery] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiMessage, setAiMessage] = useState(null);
+  const [aiRecommendedIds, setAiRecommendedIds] = useState([]);
 
-    <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
-      <h2 className="text-2xl font-bold mb-4 text-slate-900 dark:text-white">Explore Vehicles</h2>
-      <p className="text-slate-500 dark:text-zinc-400 font-medium mb-6">Groq AI is analyzing the best vehicles near you...</p>
-      <div className="h-64 bg-zinc-50 dark:bg-zinc-800 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-2xl flex items-center justify-center transition-colors duration-300">
-        <span className="text-slate-400 dark:text-zinc-500 font-semibold uppercase tracking-wider text-sm">Vehicle Map / List</span>
+  useEffect(() => {
+    const fetchVehicles = async () => {
+      try {
+        const res = await axios.get('http://localhost:5000/api/vehicles?limit=4'); // fetch a few vehicles
+        setVehicles(res.data.slice(0, 4)); // Just show 4 nearby/available
+      } catch (err) {
+        console.error("Failed to fetch vehicles for overview", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchVehicles();
+  }, []);
+
+  const handleAiRecommend = async (e) => {
+    e.preventDefault();
+    if (!aiQuery.trim()) return;
+    
+    setAiLoading(true);
+    setAiMessage(null);
+    try {
+      const res = await axios.post('http://localhost:5000/api/ai/recommend', { query: aiQuery });
+      setAiMessage(res.data.message);
+      setAiRecommendedIds(res.data.recommendedIds || []);
+    } catch (err) {
+      console.error(err);
+      setAiMessage('Oops! I could not find a recommendation right now.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const displayedVehicles = aiRecommendedIds.length > 0 
+    ? vehicles.filter(v => aiRecommendedIds.includes(v._id))
+    : vehicles;
+
+  return (
+    <div className="space-y-8 animate-fade-in-up">
+      <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-6">Dashboard Overview</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <DashboardCard title="Active Rentals" icon={<MapPin className="text-orange-500" />} value="0" />
+        <DashboardCard title="Past Bookings" icon={<History className="text-orange-500" />} value="12" />
+        <DashboardCard title="Wallet Balance" icon={<CreditCard className="text-orange-500" />} value="₹450" />
+      </div>
+
+      {/* AI Recommendation Banner */}
+      <div className="bg-gradient-to-r from-orange-500 to-rose-500 rounded-3xl p-6 md:p-8 shadow-lg text-white flex flex-col md:flex-row items-center gap-6 justify-between">
+        <div className="flex-1">
+          <h3 className="text-2xl font-black mb-2 flex items-center gap-2">✨ Ask AI for a Recommendation</h3>
+          <p className="font-medium opacity-90 mb-4">Not sure what to rent? Describe your trip and let AI find the perfect ride for you.</p>
+          {aiMessage && (
+            <div className="bg-white/20 p-4 rounded-xl border border-white/30 backdrop-blur-sm mb-4">
+              <p className="font-bold">{aiMessage}</p>
+              <button onClick={() => { setAiQuery(''); setAiMessage(null); setAiRecommendedIds([]); }} className="mt-2 text-sm underline hover:text-white/80">Clear Recommendation</button>
+            </div>
+          )}
+          <form onSubmit={handleAiRecommend} className="flex gap-2 w-full max-w-xl">
+            <input 
+              type="text" 
+              value={aiQuery}
+              onChange={(e) => setAiQuery(e.target.value)}
+              placeholder="e.g., I need a bike for a 3-day mountain trip..."
+              className="flex-1 px-4 py-3 bg-white dark:bg-zinc-800 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-300 shadow-inner"
+            />
+            <button 
+              type="submit" 
+              disabled={aiLoading || !aiQuery.trim()}
+              className="px-6 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-black transition-colors disabled:opacity-50 whitespace-nowrap"
+            >
+              {aiLoading ? 'Thinking...' : 'Find Ride'}
+            </button>
+          </form>
+        </div>
+        <div className="hidden md:block w-32 h-32 bg-white/10 rounded-full flex items-center justify-center border-4 border-white/20">
+           <span className="text-5xl">🤖</span>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Explore Nearby Vehicles</h2>
+          <Link to="/vehicles" className="text-orange-500 font-bold hover:underline text-sm">View All</Link>
+        </div>
+        
+        {loading ? (
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+             {[1, 2].map(n => <div key={n} className="bg-zinc-200 dark:bg-zinc-800 animate-pulse rounded-[2rem] h-64"></div>)}
+           </div>
+        ) : displayedVehicles.length === 0 ? (
+          <div className="text-center py-10 bg-zinc-50 dark:bg-zinc-800 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-2xl">
+            <p className="text-slate-500 dark:text-zinc-400 font-medium">No vehicles found. Try adjusting your search.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {displayedVehicles.map(vehicle => (
+              <div key={vehicle._id} className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-[2rem] p-4 shadow-sm hover:shadow-md transition-all flex flex-col">
+                <div className="h-32 bg-white dark:bg-zinc-900 rounded-xl mb-4 bg-cover bg-center border border-zinc-100 dark:border-zinc-700" style={{ backgroundImage: `url(http://localhost:5000${vehicle.imageUrl})` }}>
+                  {!vehicle.imageUrl && <div className="w-full h-full flex items-center justify-center"><span className="text-4xl">🛵</span></div>}
+                </div>
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-black text-slate-900 dark:text-white">{vehicle.name}</h3>
+                  <div className="flex items-center bg-orange-50 dark:bg-orange-500/10 px-2 py-0.5 rounded-lg text-orange-500 font-bold text-xs">
+                    <Star className="w-3 h-3 fill-current mr-1" /> {vehicle.rating}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mb-4 text-xs font-bold text-slate-500 dark:text-zinc-400">
+                  <span className="flex items-center"><MapPin className="w-3 h-3 text-blue-500 mr-1"/> {vehicle.location}</span>
+                  <span className="flex items-center"><Battery className="w-3 h-3 text-emerald-500 mr-1"/> {vehicle.range}</span>
+                </div>
+                <div className="flex items-center justify-between mt-auto pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                  <p className="font-black text-lg text-slate-900 dark:text-white">₹{vehicle.pricePerHour}<span className="text-sm font-semibold text-slate-500">/hr</span></p>
+                  <Link to={`/vehicles/${vehicle._id}`} className="px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm font-bold rounded-lg hover:bg-orange-500 dark:hover:bg-orange-500 dark:hover:text-white transition-colors">Details</Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const ProfileTab = () => {
   const [profile, setProfile] = useState(null);

@@ -8,6 +8,12 @@ const VehicleListing = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
+  // AI Recommendation State
+  const [aiQuery, setAiQuery] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiMessage, setAiMessage] = useState(null);
+  const [aiRecommendedIds, setAiRecommendedIds] = useState([]);
+  
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({
@@ -65,6 +71,35 @@ const VehicleListing = () => {
     }));
   };
 
+  const handleAiRecommend = async (e) => {
+    e.preventDefault();
+    if (!aiQuery.trim()) return;
+    
+    setAiLoading(true);
+    setAiMessage(null);
+    try {
+      const res = await axios.post('http://localhost:5000/api/ai/recommend', { query: aiQuery });
+      setAiMessage(res.data.message);
+      setAiRecommendedIds(res.data.recommendedIds || []);
+    } catch (err) {
+      console.error(err);
+      setAiMessage('Oops! I could not find a recommendation right now.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const clearAiRecommendation = () => {
+    setAiQuery('');
+    setAiMessage(null);
+    setAiRecommendedIds([]);
+  };
+
+  // Filter vehicles by AI recommendation if active
+  const displayedVehicles = aiRecommendedIds.length > 0 
+    ? vehicles.filter(v => aiRecommendedIds.includes(v._id))
+    : vehicles;
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pt-28 pb-20 selection:bg-orange-100 selection:text-orange-900 transition-colors duration-300">
       <div className="container mx-auto px-6">
@@ -84,6 +119,39 @@ const VehicleListing = () => {
           <button className="w-full md:w-auto px-6 py-4 bg-zinc-100 dark:bg-zinc-800 text-slate-900 dark:text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
             <Filter className="w-5 h-5" /> Filters
           </button>
+        </div>
+
+        {/* AI Recommendation Banner */}
+        <div className="bg-gradient-to-r from-orange-500 to-rose-500 rounded-3xl p-6 md:p-8 mb-8 shadow-lg text-white flex flex-col md:flex-row items-center gap-6 justify-between">
+          <div className="flex-1">
+            <h3 className="text-2xl font-black mb-2 flex items-center gap-2">✨ Ask AI for a Recommendation</h3>
+            <p className="font-medium opacity-90 mb-4">Not sure what to rent? Describe your trip and let AI find the perfect ride for you.</p>
+            {aiMessage && (
+              <div className="bg-white/20 p-4 rounded-xl border border-white/30 backdrop-blur-sm mb-4">
+                <p className="font-bold">{aiMessage}</p>
+                <button onClick={clearAiRecommendation} className="mt-2 text-sm underline hover:text-white/80">Clear Recommendation</button>
+              </div>
+            )}
+            <form onSubmit={handleAiRecommend} className="flex gap-2 w-full max-w-xl">
+              <input 
+                type="text" 
+                value={aiQuery}
+                onChange={(e) => setAiQuery(e.target.value)}
+                placeholder="e.g., I need a bike for a 3-day mountain trip..."
+                className="flex-1 px-4 py-3 bg-white dark:bg-zinc-800 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-300 shadow-inner"
+              />
+              <button 
+                type="submit" 
+                disabled={aiLoading || !aiQuery.trim()}
+                className="px-6 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-black transition-colors disabled:opacity-50 whitespace-nowrap"
+              >
+                {aiLoading ? 'Thinking...' : 'Find Ride'}
+              </button>
+            </form>
+          </div>
+          <div className="hidden md:block w-32 h-32 bg-white/10 rounded-full flex items-center justify-center border-4 border-white/20">
+             <span className="text-5xl">🤖</span>
+          </div>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8">
@@ -161,7 +229,7 @@ const VehicleListing = () => {
                    <div key={n} className="bg-zinc-200 dark:bg-zinc-800 animate-pulse rounded-[2rem] h-80"></div>
                  ))}
               </div>
-            ) : vehicles.length === 0 ? (
+            ) : displayedVehicles.length === 0 ? (
               <div className="text-center py-20 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800">
                 <span className="text-4xl mb-4 block">🔍</span>
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No vehicles found</h3>
@@ -169,7 +237,7 @@ const VehicleListing = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {vehicles.map(vehicle => (
+                {displayedVehicles.map(vehicle => (
                   <VehicleCard 
                     key={vehicle._id}
                     id={vehicle._id} 
