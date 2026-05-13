@@ -38,7 +38,7 @@ const upload = multer({
 // @access  Public
 router.get('/', async (req, res) => {
   try {
-    const { type, search, maxPrice } = req.query;
+    const { type, search, maxPrice, lat, lng, radius } = req.query;
 
     // Always only show available vehicles on the public listing
     let query = { isAvailable: true };
@@ -53,6 +53,13 @@ router.get('/', async (req, res) => {
         { name: { $regex: search, $options: 'i' } },
         { location: { $regex: search, $options: 'i' } }
       ];
+    }
+
+    if (lat && lng) {
+      // Bounding box approximation (1 degree ~ 111km)
+      const distanceDeg = (Number(radius) || 50) / 111; 
+      query['locationCoordinates.lat'] = { $gte: Number(lat) - distanceDeg, $lte: Number(lat) + distanceDeg };
+      query['locationCoordinates.lng'] = { $gte: Number(lng) - distanceDeg, $lte: Number(lng) + distanceDeg };
     }
 
     if (maxPrice) {
@@ -157,7 +164,7 @@ router.put('/:id', protect, lender, async (req, res) => {
       return res.status(401).json({ message: 'Not authorized to edit this vehicle' });
     }
 
-    const { name, type, pricePerHour, pricePerDay, location, range, description, imageUrl, isAvailable, specifications } = req.body;
+    const { name, type, pricePerHour, pricePerDay, location, range, description, imageUrl, isAvailable, specifications, autoConfirm } = req.body;
 
     if (name !== undefined) vehicle.name = name;
     if (type !== undefined) vehicle.type = type;
@@ -169,6 +176,7 @@ router.put('/:id', protect, lender, async (req, res) => {
     if (imageUrl !== undefined) vehicle.imageUrl = imageUrl;
     if (isAvailable !== undefined) vehicle.isAvailable = isAvailable;
     if (specifications !== undefined) vehicle.specifications = specifications;
+    if (autoConfirm !== undefined) vehicle.autoConfirm = autoConfirm;
 
     const updatedVehicle = await vehicle.save();
     res.json(updatedVehicle);

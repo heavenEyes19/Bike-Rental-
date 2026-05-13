@@ -1,7 +1,20 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Battery, Star, Shield, Calendar, Clock, Zap } from 'lucide-react';
+import { MapPin, Battery, Star, Shield, Calendar, Clock, Zap, Navigation } from 'lucide-react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
 
 const VehicleDetails = () => {
   const { id } = useParams();
@@ -94,6 +107,44 @@ const VehicleDetails = () => {
                 <SpecItem icon={<Zap className="text-orange-500" />} label={vehicle.type === 'Electric Scooter' ? 'Battery' : 'Engine'} value={vehicle.specifications?.batteryOrEngine || 'N/A'} />
                 <SpecItem icon={<MapPin className="text-blue-500" />} label="Location" value={vehicle.location || 'N/A'} />
                 <SpecItem icon={<Shield className="text-purple-500" />} label="Top Speed" value={vehicle.specifications?.topSpeed || 'N/A'} />
+              </div>
+            </div>
+
+            {/* Map & Location */}
+            <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-black text-slate-900 dark:text-white">Location</h2>
+                {vehicle.locationCoordinates?.lat && vehicle.locationCoordinates?.lng ? (
+                  <a 
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${vehicle.locationCoordinates.lat},${vehicle.locationCoordinates.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold rounded-xl text-sm hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
+                  >
+                    <Navigation className="w-4 h-4" /> Get Directions
+                  </a>
+                ) : (
+                  <span className="text-sm font-bold text-slate-400">Map unavailable</span>
+                )}
+              </div>
+              <div className="h-64 rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 relative z-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-800">
+                {vehicle.locationCoordinates?.lat && vehicle.locationCoordinates?.lng ? (
+                  <MapContainer center={[vehicle.locationCoordinates.lat, vehicle.locationCoordinates.lng]} zoom={15} style={{ height: '100%', width: '100%', zIndex: 0 }}>
+                    <TileLayer
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      attribution='&copy; OpenStreetMap contributors'
+                    />
+                    <Marker position={[vehicle.locationCoordinates.lat, vehicle.locationCoordinates.lng]}>
+                      <Popup className="font-bold">{vehicle.name}</Popup>
+                    </Marker>
+                  </MapContainer>
+                ) : (
+                  <div className="text-center p-6">
+                    <MapPin className="w-10 h-10 text-slate-300 dark:text-zinc-600 mx-auto mb-2" />
+                    <p className="text-slate-500 dark:text-zinc-400 font-bold">Exact map coordinates not provided.</p>
+                    <p className="text-sm text-slate-400 dark:text-zinc-500 mt-1">General Location: {vehicle.location}</p>
+                  </div>
+                )}
               </div>
             </div>
 

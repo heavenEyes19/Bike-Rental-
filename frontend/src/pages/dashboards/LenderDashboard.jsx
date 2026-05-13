@@ -284,32 +284,37 @@ const VehiclesTab = ({ vehicles, refreshData }) => {
                   </div>
                   <p className="text-sm font-bold text-slate-500 dark:text-zinc-400 mb-6">{vehicle.type} • {vehicle.location}</p>
 
-                  <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+                  <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-4">
+                    {/* Availability Toggle */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
-                        <div className={`w-3 h-3 rounded-full ${vehicle.isAvailable ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
                         <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">
-                          {vehicle.isAvailable ? 'Available' : 'Offline'}
+                          {vehicle.isAvailable ? 'Available for Rent' : 'Currently Offline'}
                         </span>
                       </div>
                       <button
                         onClick={() => toggleAvailability(vehicle)}
-                        className="text-sm font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none ${vehicle.isAvailable ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-700'}`}
                       >
-                        Toggle Status
+                        <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full shadow-sm transition-transform duration-300 ${vehicle.isAvailable ? 'translate-x-5' : 'translate-x-0'}`}></div>
                       </button>
                     </div>
+
                     {/* Auto-Confirm Toggle */}
-                    <button
-                      onClick={() => toggleAutoConfirm(vehicle)}
-                      className={`w-full flex items-center justify-center gap-2 py-2.5 font-bold rounded-xl text-sm transition-colors ${
-                        vehicle.autoConfirm
-                          ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-500/20'
-                          : 'bg-zinc-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                      }`}
-                    >
-                      {vehicle.autoConfirm ? <><Zap className="w-4 h-4" /> Auto-Confirm ON</> : <><Hand className="w-4 h-4" /> Manual Approval</>}
-                    </button>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        {vehicle.autoConfirm ? <Zap className="w-4 h-4 text-amber-500" /> : <Hand className="w-4 h-4 text-slate-400" />}
+                        <span className="text-sm font-bold text-slate-700 dark:text-zinc-300">
+                          {vehicle.autoConfirm ? 'Auto-Confirm On' : 'Manual Approval'}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => toggleAutoConfirm(vehicle)}
+                        className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none ${vehicle.autoConfirm ? 'bg-amber-500' : 'bg-zinc-300 dark:bg-zinc-700'}`}
+                      >
+                        <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full shadow-sm transition-transform duration-300 ${vehicle.autoConfirm ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                      </button>
+                    </div>
                     <button
                       onClick={() => deleteVehicle(vehicle)}
                       disabled={deletingId === vehicle._id}

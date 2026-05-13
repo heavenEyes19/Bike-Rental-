@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight, Navigation, Bell, CheckCircle, XCircle, Battery, Star } from 'lucide-react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import axios from 'axios';
@@ -142,19 +142,76 @@ const OverviewTab = () => {
   const [aiMessage, setAiMessage] = useState(null);
   const [aiRecommendedIds, setAiRecommendedIds] = useState([]);
 
-  useEffect(() => {
-    const fetchVehicles = async () => {
-      try {
-        const res = await axios.get('http://localhost:5000/api/vehicles?limit=4'); // fetch a few vehicles
-        setVehicles(res.data.slice(0, 4)); // Just show 4 nearby/available
-      } catch (err) {
-        console.error("Failed to fetch vehicles for overview", err);
-      } finally {
-        setLoading(false);
+  // removed duplicate useEffect
+
+  // Location Search State
+  const [locationSearch, setLocationSearch] = useState('');
+  const [isLocating, setIsLocating] = useState(false);
+  const [fallbackMessage, setFallbackMessage] = useState(null);
+
+  const fetchVehicles = useCallback(async (search = '', lat = null, lng = null) => {
+    setLoading(true);
+    setFallbackMessage(null);
+    try {
+      let url = 'http://localhost:5000/api/vehicles?';
+      if (search) url += `search=${encodeURIComponent(search)}&`;
+      if (lat && lng) url += `lat=${lat}&lng=${lng}&radius=50`;
+      
+      const res = await axios.get(url);
+      
+      if ((search || (lat && lng)) && res.data.length === 0) {
+        setFallbackMessage(`No vehicles found near ${search || 'your location'}. Showing other available vehicles.`);
+        const fallbackRes = await axios.get('http://localhost:5000/api/vehicles');
+        setVehicles(fallbackRes.data.slice(0, 4));
+      } else {
+        setVehicles(res.data.slice(0, 4)); // Show up to 4 nearby
       }
-    };
-    fetchVehicles();
+    } catch (err) {
+      console.error("Failed to fetch vehicles for overview", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchVehicles();
+  }, [fetchVehicles]);
+
+  const handleLocationSearch = (e) => {
+    e.preventDefault();
+    fetchVehicles(locationSearch);
+  };
+
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      try {
+        const { latitude, longitude } = position.coords;
+        const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
+          headers: { 'Accept-Language': 'en' }
+        });
+        const city = res.data.address?.city || res.data.address?.town || res.data.address?.state || '';
+        if (city) {
+          setLocationSearch(city);
+        }
+        // Pass the coordinates directly to fetch vehicles in that geographic radius
+        fetchVehicles(city, latitude, longitude);
+      } catch (err) {
+        console.error("Reverse geocoding failed", err);
+        // Fallback to just coordinates if geocoding fails
+        fetchVehicles('', position.coords.latitude, position.coords.longitude);
+      } finally {
+        setIsLocating(false);
+      }
+    }, () => {
+      alert("Unable to retrieve your location");
+      setIsLocating(false);
+    });
+  };
 
   const handleAiRecommend = async (e) => {
     e.preventDefault();
@@ -222,10 +279,38 @@ const OverviewTab = () => {
       </div>
 
       <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Explore Nearby Vehicles</h2>
-          <Link to="/vehicles" className="text-orange-500 font-bold hover:underline text-sm">View All</Link>
+          <div className="flex w-full md:w-auto items-center gap-2">
+            <form onSubmit={handleLocationSearch} className="flex flex-1 md:w-64 relative">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input 
+                type="text" 
+                value={locationSearch}
+                onChange={(e) => setLocationSearch(e.target.value)}
+                placeholder="Enter city or area..."
+                className="w-full pl-9 pr-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-900 dark:text-white"
+              />
+              <button type="submit" className="hidden">Search</button>
+            </form>
+            <button 
+              onClick={handleUseCurrentLocation}
+              disabled={isLocating}
+              className="px-4 py-2 bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 font-bold rounded-xl text-sm hover:bg-orange-100 dark:hover:bg-orange-500/20 transition-colors whitespace-nowrap flex items-center gap-2 disabled:opacity-50"
+            >
+              <Navigation className="w-4 h-4" />
+              {isLocating ? 'Locating...' : 'Near Me'}
+            </button>
+            <Link to="/vehicles" className="px-4 py-2 text-slate-500 hover:text-orange-500 font-bold text-sm whitespace-nowrap">View All</Link>
+          </div>
         </div>
+
+        {fallbackMessage && (
+          <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl flex items-center gap-3 text-amber-800 dark:text-amber-300">
+            <span className="text-xl">⚠️</span>
+            <p className="font-semibold text-sm">{fallbackMessage}</p>
+          </div>
+        )}
         
         {loading ? (
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
